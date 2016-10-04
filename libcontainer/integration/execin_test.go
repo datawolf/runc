@@ -53,7 +53,7 @@ func TestExecIn(t *testing.T) {
 
 	err = container.Run(ps)
 	ok(t, err)
-	waitProcess(ps, t)
+	//waitProcess(ps, t)
 	stdinW.Close()
 	waitProcess(process, t)
 
@@ -123,7 +123,7 @@ func testExecInRlimit(t *testing.T, userns bool) {
 	}
 	err = container.Run(ps)
 	ok(t, err)
-	waitProcess(ps, t)
+	//waitProcess(ps, t)
 
 	stdinW.Close()
 	waitProcess(process, t)
@@ -175,7 +175,7 @@ func TestExecInAdditionalGroups(t *testing.T) {
 	ok(t, err)
 
 	// Wait for process
-	waitProcess(&pconfig, t)
+	//waitProcess(&pconfig, t)
 
 	stdinW.Close()
 	waitProcess(process, t)
@@ -290,7 +290,7 @@ func TestExecInTTY(t *testing.T) {
 		t.Fatal("Waiting for copy timed out")
 	case <-copy:
 	}
-	waitProcess(ps, t)
+	//waitProcess(ps, t)
 
 	stdinW.Close()
 	waitProcess(process, t)
@@ -343,7 +343,7 @@ func TestExecInEnvironment(t *testing.T) {
 	}
 	err = container.Run(process2)
 	ok(t, err)
-	waitProcess(process2, t)
+	//waitProcess(process2, t)
 
 	stdinW.Close()
 	waitProcess(process, t)
@@ -409,7 +409,7 @@ func TestExecinPassExtraFiles(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waitProcess(inprocess, t)
+	//waitProcess(inprocess, t)
 	stdinW.Close()
 	waitProcess(process, t)
 
@@ -475,7 +475,7 @@ func TestExecInOomScoreAdj(t *testing.T) {
 	}
 	err = container.Run(ps)
 	ok(t, err)
-	waitProcess(ps, t)
+	//waitProcess(ps, t)
 
 	stdinW.Close()
 	waitProcess(process, t)
@@ -536,7 +536,7 @@ func TestExecInUserns(t *testing.T) {
 	}
 	err = container.Run(process2)
 	ok(t, err)
-	waitProcess(process2, t)
+	//waitProcess(process2, t)
 	stdinW.Close()
 	waitProcess(process, t)
 

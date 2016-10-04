@@ -271,7 +271,7 @@ func TestEnter(t *testing.T) {
 
 	// Wait processes
 	stdinW2.Close()
-	waitProcess(&pconfig2, t)
+	//waitProcess(&pconfig2, t)
 
 	stdinW.Close()
 	waitProcess(&pconfig, t)
@@ -1255,7 +1255,7 @@ func TestRootfsPropagationSlaveMount(t *testing.T) {
 	ok(t, err)
 
 	stdinW2.Close()
-	waitProcess(pconfig2, t)
+	//waitProcess(pconfig2, t)
 	stdinW.Close()
 	waitProcess(pconfig, t)
 
@@ -1376,7 +1376,7 @@ func TestRootfsPropagationSharedMount(t *testing.T) {
 
 	// Wait for process
 	stdinW2.Close()
-	waitProcess(pconfig2, t)
+	//waitProcess(pconfig2, t)
 	stdinW.Close()
 	waitProcess(pconfig, t)
 
@@ -1499,7 +1499,7 @@ func TestInitJoinPID(t *testing.T) {
 	}
 	err = container1.Run(ps)
 	ok(t, err)
-	waitProcess(ps, t)
+	//waitProcess(ps, t)
 
 	// Stop init processes one by one. Stop the second container should
 	// not stop the first.

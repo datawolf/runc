@@ -63,8 +63,16 @@ func createTty(p *libcontainer.Process, rootuid, rootgid int, consolePath string
 	if err != nil {
 		return nil, err
 	}
-	go io.Copy(console, os.Stdin)
-	go io.Copy(os.Stdout, console)
+	go func() {
+		if _, err := io.Copy(console, os.Stdin); err != nil {
+			os.Exit(0)
+		}
+	}()
+	go func() {
+		if _, err := io.Copy(os.Stdout, console); err != nil {
+			os.Exit(0)
+		}
+	}()
 
 	state, err := term.SetRawTerminal(os.Stdin.Fd())
 	if err != nil {
