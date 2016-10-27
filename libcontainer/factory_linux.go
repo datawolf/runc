@@ -56,7 +56,11 @@ func SystemdCgroups(l *LinuxFactory) error {
 // containers that use the native cgroups filesystem implementation to
 // create and manage cgroups.
 func Cgroupfs(l *LinuxFactory) error {
+	fmt.Println("设置 LinuxFactory 的 l.NewCgroupManager")
 	l.NewCgroupsManager = func(config *configs.Cgroup, paths map[string]string) cgroups.Manager {
+		fmt.Println("[Cgroupfs] create new CgroupManager")
+		fmt.Printf("[Cgroupfs] $$$$ config = %v\n", config)
+		fmt.Printf("[Cgroupfs] $$$$ paths = %v\n", paths)
 		return &fs.Manager{
 			Cgroups: config,
 			Paths:   paths,
@@ -82,7 +86,9 @@ func TmpfsRoot(l *LinuxFactory) error {
 // CriuPath returns an option func to configure a LinuxFactory with the
 // provided criupath
 func CriuPath(criupath string) func(*LinuxFactory) error {
+	fmt.Printf("return an option func to configure LinuxFactory with the criupath = %v\n", criupath)
 	return func(l *LinuxFactory) error {
+		fmt.Println("设置 LinuxFactory 的 l.criuPath")
 		l.CriuPath = criupath
 		return nil
 	}
@@ -91,19 +97,23 @@ func CriuPath(criupath string) func(*LinuxFactory) error {
 // New returns a linux based container factory based in the root directory and
 // configures the factory with the provided option funcs.
 func New(root string, options ...func(*LinuxFactory) error) (Factory, error) {
+	fmt.Printf("[libcontainer.New] create root dir = \"%s\"\n", root)
 	if root != "" {
 		if err := os.MkdirAll(root, 0700); err != nil {
 			return nil, newGenericError(err, SystemError)
 		}
 	}
+	fmt.Println("[libcontainer.New] default factory is \"LinuxFactory\"")
 	l := &LinuxFactory{
 		Root:      root,
 		InitArgs:  []string{"/proc/self/exe", "init"},
 		Validator: validate.New(),
 		CriuPath:  "criu",
 	}
+	fmt.Println("[libcontainer.New] set default cgroupManager to fs")
 	Cgroupfs(l)
 	for _, opt := range options {
+		fmt.Printf("[libcontainer.New] call option funcs = %v\n", opt)
 		if err := opt(l); err != nil {
 			return nil, err
 		}
@@ -135,9 +145,12 @@ func (l *LinuxFactory) Create(id string, config *configs.Config) (Container, err
 	if l.Root == "" {
 		return nil, newGenericError(fmt.Errorf("invalid root"), ConfigInvalid)
 	}
+	fmt.Printf("[LinuxFactory.Create] l.Root = %v\n", l.Root)
+	fmt.Printf("[LinuxFactory.Create] validate the container-id = %v\n", id)
 	if err := l.validateID(id); err != nil {
 		return nil, err
 	}
+	fmt.Printf("[LinuxFactory.Create] validate the container config = %v\n", config)
 	if err := l.Validator.Validate(config); err != nil {
 		return nil, newGenericError(err, ConfigInvalid)
 	}
@@ -155,6 +168,7 @@ func (l *LinuxFactory) Create(id string, config *configs.Config) (Container, err
 	} else if !os.IsNotExist(err) {
 		return nil, newGenericError(err, SystemError)
 	}
+	fmt.Printf("[LinuxFactory.Create] create containerRoot = %s\n", containerRoot)
 	if err := os.MkdirAll(containerRoot, 0711); err != nil {
 		return nil, newGenericError(err, SystemError)
 	}
@@ -163,11 +177,13 @@ func (l *LinuxFactory) Create(id string, config *configs.Config) (Container, err
 	}
 	fifoName := filepath.Join(containerRoot, execFifoFilename)
 	oldMask := syscall.Umask(0000)
+	fmt.Printf("[LinuxFactory.Create] create fifoName= %s\n", fifoName)
 	if err := syscall.Mkfifo(fifoName, 0622); err != nil {
 		syscall.Umask(oldMask)
 		return nil, newGenericError(err, SystemError)
 	}
 	syscall.Umask(oldMask)
+	fmt.Printf("[LinuxFactory.Create] create fifo's uid(%d) and  gid (%d)\n", uid, gid)
 	if err := os.Chown(fifoName, uid, gid); err != nil {
 		return nil, newGenericError(err, SystemError)
 	}
@@ -180,6 +196,7 @@ func (l *LinuxFactory) Create(id string, config *configs.Config) (Container, err
 		cgroupManager: l.NewCgroupsManager(config.Cgroups, nil),
 	}
 	c.state = &stoppedState{c: c}
+	fmt.Printf("[LinuxFactory.Create] create linuxContainer = %v\n", c)
 	return c, nil
 }
 
@@ -188,10 +205,12 @@ func (l *LinuxFactory) Load(id string) (Container, error) {
 		return nil, newGenericError(fmt.Errorf("invalid root"), ConfigInvalid)
 	}
 	containerRoot := filepath.Join(l.Root, id)
+	fmt.Printf("[Load] containerRoot = %v\n", containerRoot)
 	state, err := l.loadState(containerRoot, id)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Printf("[Load] state = %v\n", state)
 	r := &nonChildProcess{
 		processPid:       state.InitProcessPid,
 		processStartTime: state.InitProcessStartTime,
@@ -212,6 +231,7 @@ func (l *LinuxFactory) Load(id string) (Container, error) {
 	if err := c.refreshState(); err != nil {
 		return nil, err
 	}
+	fmt.Printf("[Load] linuxContainer = %v\n\n", c)
 	return c, nil
 }
 
@@ -239,13 +259,20 @@ func (l *LinuxFactory) StartInitialization() (err error) {
 		}
 		*pair.v = i
 	}
+
+	fmt.Println("[LinuxFactory.StartInitialization] 根据环境变量，获得pipe和root的文件描述符，和初始化类型")
+	fmt.Printf("[LinuxFactory.StartInitialization] LIBCONTAINER_INITPIPE=%d\n", pipefd)
+	fmt.Printf("[LinuxFactory.StartInitialization] LIBCONTAINER_STATEDIR=%d\n", rootfd)
+
 	var (
 		pipe = os.NewFile(uintptr(pipefd), "pipe")
 		it   = initType(os.Getenv("_LIBCONTAINER_INITTYPE"))
 	)
+	fmt.Printf("[LinuxFactory.StartInitialization] LIBCONTAINER_INITTYPE=%v\n", os.Getenv("_LIBCONTAINER_INITTYPE"))
 	// clear the current process's environment to clean any libcontainer
 	// specific env vars.
 	os.Clearenv()
+	fmt.Println("[LinuxFactory.StartInitialization] 清空当前进程的环境变量")
 
 	var i initer
 	defer func() {
@@ -273,6 +300,7 @@ func (l *LinuxFactory) StartInitialization() (err error) {
 	if err != nil {
 		return err
 	}
+	fmt.Printf("[StartInitialization] run %v's Init\n", it)
 	return i.Init()
 }
 
