@@ -114,11 +114,11 @@ func main() {
 			logrus.SetLevel(logrus.DebugLevel)
 		}
 		if path := context.GlobalString("log"); path != "" {
-			f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0666)
+			_, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND|os.O_SYNC, 0666)
 			if err != nil {
 				return err
 			}
-			logrus.SetOutput(f)
+			//	logrus.SetOutput(f)
 		}
 		switch context.GlobalString("log-format") {
 		case "text":
@@ -128,6 +128,7 @@ func main() {
 		default:
 			return fmt.Errorf("unknown log-format %q", context.GlobalString("log-format"))
 		}
+		logrus.Info("app.Before")
 		return nil
 	}
 	// If the command returns an error, cli takes upon itself to print
