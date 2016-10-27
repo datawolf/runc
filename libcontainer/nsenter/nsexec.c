@@ -137,6 +137,7 @@ int setns(int fd, int nstype)
 static int syncfd = -1;
 
 /* TODO(cyphar): Fix this so it correctly deals with syncT. */
+// __COUNTER__ 有什么意义？
 #define bail(fmt, ...)								\
 	do {									\
 		int ret = __COUNTER__ + 1;					\
@@ -149,6 +150,11 @@ static int syncfd = -1;
 				fprintf(stderr, "nsenter: failed: write(ret)");	\
 		}								\
 		exit(ret);							\
+	} while(0)
+
+#define debug(fmt, ...)								\
+	do {									\
+		fprintf(stdout, "nsenter[%d][%d]: " fmt "\n",getpid(), getppid(), ##__VA_ARGS__);		\
 	} while(0)
 
 static int write_file(char *data, size_t data_len, char *pathfmt, ...)
@@ -276,11 +282,13 @@ static int map_field(char *map, int map_len, int n)
 	return value;
 }
 
+// 为什么要分开写？？？？
 /* A dummy function that just jumps to the given jumpval. */
 static int child_func(void *arg) __attribute__ ((noinline));
 static int child_func(void *arg)
 {
 	struct clone_t *ca = (struct clone_t *)arg;
+	// 通过longjmp跳转到合适的位置，ca->jmpval局势setjmp的返回值
 	longjmp(*ca->env, ca->jmpval);
 }
 
@@ -291,7 +299,11 @@ static int clone_parent(jmp_buf *env, int jmpval)
 		.env    = env,
 		.jmpval = jmpval,
 	};
-
+	// CLONE_PARENT: 创建的子进程的父进程是调用者的父进程，新进程与创建它的进程成了“兄弟”而不是“父子”
+	// SIGCHLD： flags的低字节包含了子进程死亡的时候发送给父进程的信号，如果信号指定了除了SIGCHLD之外的任何位，
+	// 父进程在通过wait(2)等待子进程时，必须指定__WALL或者__WCLONE选项。
+	// 如果没有指定信号，父进程在子进程终结的时候不会收到信号。
+	// 子进程会执行函数child_func,并将&ca传递给函数child_func
 	return clone(child_func, ca.stack_ptr, CLONE_PARENT | SIGCHLD, &ca);
 }
 
@@ -454,6 +466,8 @@ static void nl_parse(int fd, struct nlconfig_t *config)
 
 		current += NLA_ALIGN(payload_len);
 	}
+
+	// 解析完成，为什么不能在这里释放？
 }
 
 static void nl_free(struct nlconfig_t *config)
@@ -487,6 +501,7 @@ static void join_namespaces(struct nlconfig_t *config)
 		char *path;
 		struct namespace_t *ns;
 
+		debug("child: namespace = %s", namespace);
 		/* Resize the namespace array. */
 		namespaces = realloc(namespaces, ++num * sizeof(struct namespace_t));
 		if (!namespaces)
@@ -508,7 +523,7 @@ static void join_namespaces(struct nlconfig_t *config)
 		strncpy(ns->path, path, PATH_MAX);
 
 		/* Cache the user namespace entry. */
-		if (ns->ns == CLONE_NEWUSER || !strcmp(namespace, "user"))
+		if (ns->ns == CLONE_NEWUSER || !strcmp(namespace, "user"))	// 一个判断就足够了
 			userns = ns;
 	} while ((namespace = strtok_r(NULL, ",", &saveptr)) != NULL);
 
@@ -571,12 +586,16 @@ void nsexec(void)
 	 * If we don't have an init pipe, just return to the go routine.
 	 * We'll only get an init pipe for start or exec.
 	 */
-	pipenum = initpipe();
-	if (pipenum == -1)
+	pipenum = initpipe();	// 读取环境变量_LIBCONTAINER_INITPIPE的值，并将其转换为init
+	debug("pipenum = %d", pipenum);
+	if (pipenum == -1) {
+		debug("just return to the go routine");
 		return;
+	}
 
 	/* Parse all of the netlink configuration. */
 	/* XXX: Make the {root,host}{uid,gid} = 0 explicit. */
+	debug("parse all of the netlink configuration");
 	nl_parse(pipenum, &config);
 
 	/* clone(2) flags are mandatory. */
@@ -586,6 +605,12 @@ void nsexec(void)
 	/* Pipe so we can tell the child when we've finished setting up. */
 	if (socketpair(AF_LOCAL, SOCK_STREAM, 0, parentpipe) < 0)
 		bail("failed to setup sync pipe between parent and child");
+	debug("parentpipe[0] = %d", parentpipe[0]);
+	debug("parentpipe[1] = %d", parentpipe[1]);
+
+
+	// 设置soc->sk->sk_flag中的SOCK_PASSCRED位。
+	// 允许SCM_CREDENTIALS控制消息的接收。
 	arg = 1;
 	if (setsockopt(parentpipe[0], SOL_SOCKET, SO_PASSCRED, &arg, sizeof(arg)) < 0)
 		bail("failed to setsockopt(SO_PASSCRED) on parentpipe[0]");
@@ -648,6 +673,9 @@ void nsexec(void)
 	 *          gid_map. That process will go on to create a new process, then
 	 *          it will send us its PID which we will send to the bootstrap
 	 *          process.
+	 * 所做工作：创建子进程JUMP_CHILD，并写入它的uid_map 和 gid_map.JUMP_CHILD将会
+	 *           创建新的子进程INIT，INIT子进程会将自己PID发送给JUMP_PARENT，
+         *           最后由JUMP_PARENT将该PID发送给bootstrap进程
 	 */
 	case JUMP_PARENT: {
 			int len;
@@ -655,10 +683,13 @@ void nsexec(void)
 			char buf[JSON_MAX];
 
 			/* For debugging. */
+			debug("parent: set the name of the calling thread to runc:[0:PARENT]");
 			prctl(PR_SET_NAME, (unsigned long) "runc:[0:PARENT]", 0, 0, 0);
 
 			/* Start the process of getting a container. */
+			// 创建子进程，子进程通过longjmp，跳转到JUMP_CHILD处执行
 			child = clone_parent(&env, JUMP_CHILD);
+			debug("parent: create child process: child = %d", child);
 			if (child < 0)
 				bail("unable to fork: child_func");
 
@@ -669,11 +700,13 @@ void nsexec(void)
 				/* This doesn't need to be global, we're in the parent. */
 				int syncfd = parentpipe[1];
 
+				debug("parent: read syncfd to sync with child: next state");
 				if (read(syncfd, &s, sizeof(s)) != sizeof(s))
 					bail("failed to sync with child: next state");
 
 				switch (s) {
 				case SYNC_ERR: {
+						debug("parent: get SYNC_ERR");
 						/* We have to mirror the error code of the child. */
 						int ret;
 
@@ -684,6 +717,7 @@ void nsexec(void)
 					}
 					break;
 				case SYNC_USERMAP_PLS:
+					debug("parent: get SYNC_USERMAP_PLS");
 					/* Enable setgroups(2) if we've been asked to. */
 					if (config.is_setgroup)
 						update_setgroups(child, SETGROUPS_ALLOW);
@@ -699,11 +733,13 @@ void nsexec(void)
 					}
 					break;
 				case SYNC_USERMAP_ACK:
+					debug("parent: get SYNC_USERMAP_ACK");
 					/* We should _never_ receive acks. */
 					kill(child, SIGKILL);
 					bail("failed to sync with child: unexpected SYNC_USERMAP_ACK");
 					break;
 				case SYNC_RECVPID_PLS: {
+						debug("parent: get SYNC_RECVPID_PLS");
 						pid_t old = child;
 
 						/*
@@ -735,11 +771,13 @@ void nsexec(void)
 					/* Leave the loop. */
 					goto out;
 				case SYNC_RECVPID_ACK:
+					debug("parent: get SYNC_RECVPID_ACK");
 					/* We should _never_ receive acks. */
 					kill(child, SIGKILL);
 					bail("failed to sync with child: unexpected SYNC_RECVPID_ACK");
 					break;
 				case SYNC_RECVPID_SYN:
+					debug("parent: get SYNC_RECVPID_SYN");
 					/* We should _never_ receive syns. */
 					kill(child, SIGKILL);
 					bail("failed to sync with child: unexpected SYNC_RECVPID_SYN");
@@ -749,6 +787,7 @@ void nsexec(void)
 
 		out:
 			/* Send the init_func pid back to our parent. */
+			debug("parent: send the init func pid[%d] back to our parent", child);
 			len = snprintf(buf, JSON_MAX, "{\"pid\": %d}\n", child);
 			if (len < 0) {
 				kill(child, SIGKILL);
@@ -769,6 +808,10 @@ void nsexec(void)
 	 *          ask our parent (stage 0) to set up our user mappings for us.
 	 *          Then, we unshare the rest of the requested namespaces and
 	 *          create a new child (stage 2: JUMP_INIT).
+         * 所做工作：首先根据netlink payload中的配置join namespace
+	 *	    如果设置了CLONE_NEWUSER，我们将会unshare user namespace，并请求
+	 *	     JUMP_PARENT 设置我们的 user mappings，然后我们unshare 其他namesapce
+	 *	     并创建子进程JUMP_INIT
 	 */
 	case JUMP_CHILD: {
 			enum sync_t s;
@@ -777,6 +820,7 @@ void nsexec(void)
 			syncfd = parentpipe[0];
 
 			/* For debugging. */
+			debug("child: set the name of the calling thread to runc:[1:CHILD]");
 			prctl(PR_SET_NAME, (unsigned long) "runc:[1:CHILD]", 0, 0, 0);
 
 			/*
@@ -785,9 +829,10 @@ void nsexec(void)
 			 * [stage 2: JUMP_INIT]) would be meaningless). We could send it
 			 * using cmsg(3) but that's just annoying.
 			 */
-			if (config.namespaces)
+			if (config.namespaces) {
+				debug("child: config.namespaces = %s", config.namespaces);
 				join_namespaces(&config);
-
+			}
 			/*
 			 * This needs to be done if we're about to create a user namespace.
 			 * If we already joined a user namespace this is also fine (we do a
@@ -815,7 +860,7 @@ void nsexec(void)
 				 * We don't have the privileges to do any mapping here (see the
 				 * clone_parent rant). So signal our parent to hook us up.
 				 */
-
+				debug("child: sync with parent:  write(SYNC_USERMAP_PLS)");
 				s = SYNC_USERMAP_PLS;
 				if (write(syncfd, &s, sizeof(s)) != sizeof(s))
 					bail("failed to sync with parent: write(SYNC_USERMAP_PLS)");
@@ -826,6 +871,7 @@ void nsexec(void)
 					bail("failed to sync with parent: read(SYNC_USERMAP_ACK)");
 				if (s != SYNC_USERMAP_ACK)
 					bail("failed to sync with parent: SYNC_USERMAP_ACK: got %u", s);
+				debug("child: sync with parent: read(SYNC_USERMAP_ACK)");
 
 				config.cloneflags &= ~CLONE_NEWUSER;
 			}
@@ -866,6 +912,8 @@ void nsexec(void)
 	 *          actually return to the Go runtime. Our job is to just do the
 	 *          final cleanup steps and then return to the Go runtime to allow
 	 *          init_linux.go to run.
+	 * 所作工作： 这是最后的child process。最后返回给go runtime的进程。
+	 *	   主要做一些清理工作，并且返回到Go runtime，让init_linux.go继续执行
 	 */
 	case JUMP_INIT: {
 			/*
@@ -879,6 +927,7 @@ void nsexec(void)
 			syncfd = parentpipe[0];
 
 			/* For debugging. */
+			debug("init: set the name of the calling thread to runc:[1:INIT]");
 			prctl(PR_SET_NAME, (unsigned long) "runc:[2:INIT]", 0, 0, 0);
 
 			/*
@@ -891,6 +940,7 @@ void nsexec(void)
 			 * https://lwn.net/Articles/532748/
 			 */
 			if (config.joined & CLONE_NEWPID) {
+				debug("init: joining a PID namespace, we need to double-fork");
 				pid_t first, second;
 
 				/* Enter the PID namespace. */
@@ -903,6 +953,7 @@ void nsexec(void)
 					exit(0);
 				}
 
+				debug("init: first fork");
 				/* Orphan ourselves. */
 				second = fork();
 				if (second < 0)
@@ -911,6 +962,7 @@ void nsexec(void)
 					exit(0);
 
 				/* We are now reparented to the init inside the container. */
+				debug("init: second fork");
 			}
 
 			/*
@@ -928,6 +980,7 @@ void nsexec(void)
 			if (s != SYNC_RECVPID_SYN)
 				bail("failed to sync with parent: SYNC_RECVPID_SYN: got %u", s);
 
+			debug("init: send our pid");
 			/* Send our PID. */
 			if (sendpid(syncfd, getpid()) < 0)
 				bail("failed to send PID to parent: sendmsg(pid)");
@@ -941,21 +994,31 @@ void nsexec(void)
 
 			/* Now we can move on with the fun of setting up this container. */
 
+			debug("init: setting up container, setsid setuid setgid setgroup");
+
+			// creates a seeion and sets the process group ID
 			if (setsid() < 0)
 				bail("setsid failed");
 
+			// set user identity
 			if (setuid(0) < 0)
 				bail("setuid failed");
-
+			// set group identity
 			if (setgid(0) < 0)
 				bail("setgid failed");
 
+			// set list of supplementary group IDs
 			if (setgroups(0, NULL) < 0)
 				bail("setgroups failed");
 
+			// 如果用户指定了console，则进行相关设置
 			if (consolefd != -1) {
+				// 会话的首进程调用TIOCSCTTY为REQUEST的ioctl为会话期分配控制终端
 				if (ioctl(consolefd, TIOCSCTTY, 0) < 0)
 					bail("ioctl TIOCSCTTY failed");
+
+				// duplicate a file descriptor
+				// int dup3(int oldfd, int newfd, int flags);
 				if (dup3(consolefd, STDIN_FILENO, 0) != STDIN_FILENO)
 					bail("failed to dup stdin");
 				if (dup3(consolefd, STDOUT_FILENO, 0) != STDOUT_FILENO)
@@ -965,10 +1028,12 @@ void nsexec(void)
 			}
 
 			/* Close sync pipes. */
+			debug("init: close sync pipes");
 			close(parentpipe[0]);
 			close(parentpipe[1]);
 
-			/* Free netlink data. */
+			/* Free netlink data. */ // 其实可以更早的释放
+			debug("init: free netlink data");
 			nl_free(&config);
 
 			/* Finish executing, let the Go runtime take over. */

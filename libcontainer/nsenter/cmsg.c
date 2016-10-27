@@ -57,6 +57,8 @@ int sendpid(int sockfd, pid_t pid)
 	};
 	char ibdata = IB_DATA;
 
+	// CMSG_SPACE: returns the number of bytes an ancillary element with
+	// payload of the passed data length occupies. This is a constant expression.
 	union {
 		char buf[CMSG_SPACE(sizeof(cred))];
 		struct cmsghdr align;
@@ -68,6 +70,10 @@ int sendpid(int sockfd, pid_t pid)
 	 * well-hidden in the documentation (and only applies to
 	 * SOCK_STREAM). See the bottom part of unix(7).
 	 */
+	// To pass file descriptors or credentials over a SOCKET_STREAM, you need
+	// to send or receive at least one byte of nonancillary data in the same
+	// sendmsg(2) or recvmsg(2) call.
+	// 必须至少发送和接收一个自己，否则的话，另一端无法收到任何数据。
 	iov[0].iov_base = &ibdata;
 	iov[0].iov_len = sizeof(ibdata);
 
@@ -78,11 +84,17 @@ int sendpid(int sockfd, pid_t pid)
 	msg.msg_control = u.buf;
 	msg.msg_controllen = sizeof(u.buf);
 
+	// returns a pointer to the first cmsghdr in the ancillary data buffer
+	// associated with the passed msghdr
 	cmsg = CMSG_FIRSTHDR(&msg);
 	cmsg->cmsg_level = SOL_SOCKET;
 	cmsg->cmsg_type = SCM_CREDENTIALS;
+	// CMSG_LEN returns the value to stroe in the cmsg_len member of the cmsghdr structure.
+	// taking into account any necessary alignment. It takes the data length as an argument
+	// This is a constant expression
 	cmsg->cmsg_len = CMSG_LEN(sizeof(struct ucred));
 
+	// CMSG_DATA: returns a pointer to the data portion of a cmsghdr.
 	credptr = (struct ucred *) CMSG_DATA(cmsg);
 	memcpy(credptr, &cred, sizeof(struct ucred));
 
