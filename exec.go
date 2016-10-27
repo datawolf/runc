@@ -110,10 +110,14 @@ func execProcess(context *cli.Context) (int, error) {
 	if err != nil {
 		return -1, err
 	}
+	fmt.Printf("[execProcess] get the container : %v\n", container)
+
 	status, err := container.Status()
 	if err != nil {
 		return -1, err
 	}
+	fmt.Printf("[execProcess] get the container status: %v\n", status)
+
 	if status == libcontainer.Stopped {
 		return -1, fmt.Errorf("cannot exec a container that has run and stopped")
 	}
@@ -126,11 +130,13 @@ func execProcess(context *cli.Context) (int, error) {
 	if err != nil {
 		return -1, err
 	}
+	fmt.Printf("[execProcess] get the container state: %v\n", state)
 	bundle := utils.SearchLabels(state.Config.Labels, "bundle")
 	p, err := getProcess(context, bundle)
 	if err != nil {
 		return -1, err
 	}
+	fmt.Printf("[execProcess] process =  %v\n", p)
 	r := &runner{
 		enableSubreaper: false,
 		shouldDestroy:   false,
@@ -139,6 +145,7 @@ func execProcess(context *cli.Context) (int, error) {
 		detach:          detach,
 		pidFile:         context.String("pid-file"),
 	}
+	fmt.Printf("[execProcess] runner =  %v\n", r)
 	return r.run(p)
 }
 
