@@ -6,13 +6,16 @@ import (
 	"os"
 	"runtime"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/opencontainers/runc/libcontainer"
 	_ "github.com/opencontainers/runc/libcontainer/nsenter"
 	"github.com/urfave/cli"
 )
 
 func init() {
+	logrus.Info("main_unix.go init")
 	if len(os.Args) > 1 && os.Args[1] == "init" {
+		logrus.Info("set gomaxprocs")
 		runtime.GOMAXPROCS(1)
 		runtime.LockOSThread()
 	}
@@ -22,6 +25,7 @@ var initCommand = cli.Command{
 	Name:  "init",
 	Usage: `initialize the namespaces and launch the process (do not call it outside of runc)`,
 	Action: func(context *cli.Context) error {
+		logrus.Info("###### 别把这货给忘记了 ########")
 		factory, _ := libcontainer.New("")
 		if err := factory.StartInitialization(); err != nil {
 			// as the error is sent back to the parent there is no need to log
