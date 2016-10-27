@@ -71,17 +71,22 @@ func newContainerInit(t initType, pipe *os.File, stateDirFD int) (initer, error)
 	if err := json.NewDecoder(pipe).Decode(&config); err != nil {
 		return nil, err
 	}
+	fmt.Println("[init_linux.newContainerInit] 解析父进程通过管道发送过来的config")
+	fmt.Println("[init_linux.newContainerInit] ", config)
 	if err := populateProcessEnvironment(config.Env); err != nil {
 		return nil, err
 	}
+	fmt.Println("[init_linux.newContainerInit] 根据config.Env中的信息设置进程的环境变量", config.Env)
 	switch t {
 	case initSetns:
+		fmt.Println("[init_linux.newContainerInit] initSetns")
 		return &linuxSetnsInit{
 			pipe:       pipe,
 			config:     config,
 			stateDirFD: stateDirFD,
 		}, nil
 	case initStandard:
+		fmt.Println("[init_linux.newContainerInit] initStandard")
 		return &linuxStandardInit{
 			pipe:       pipe,
 			parentPid:  syscall.Getppid(),
@@ -114,11 +119,14 @@ func finalizeNamespace(config *initConfig) error {
 	// Ensure that all unwanted fds we may have accidentally
 	// inherited are marked close-on-exec so they stay out of the
 	// container
+	logrus.Infof("[finalizeNamespace] config.PassedFilesCount = %v", config.PassedFilesCount)
 	if err := utils.CloseExecFrom(config.PassedFilesCount + 3); err != nil {
 		return err
 	}
 
 	capabilities := config.Config.Capabilities
+	logrus.Infof("[finalizeNamespace] capabilities = %v", capabilities)
+	logrus.Infof("[finalizeNamespace] config.Capabilities = %v", config.Capabilities)
 	if config.Capabilities != nil {
 		capabilities = config.Capabilities
 	}
@@ -144,6 +152,8 @@ func finalizeNamespace(config *initConfig) error {
 	if err := w.drop(); err != nil {
 		return err
 	}
+
+	logrus.Infof("[finalizeNamespace] config.Cwd = %v", config.Cwd)
 	if config.Cwd != "" {
 		if err := syscall.Chdir(config.Cwd); err != nil {
 			return fmt.Errorf("chdir to cwd (%q) set in config.json failed: %v", config.Cwd, err)
@@ -335,6 +345,7 @@ func fixStdioPermissions(u *user.ExecUser) error {
 // setupNetwork sets up and initializes any network interface inside the container.
 func setupNetwork(config *initConfig) error {
 	for _, config := range config.Networks {
+		fmt.Printf("Type = %s, Name = %s\n", config.Type, config.Name)
 		strategy, err := getStrategy(config.Type)
 		if err != nil {
 			return err
@@ -348,6 +359,7 @@ func setupNetwork(config *initConfig) error {
 
 func setupRoute(config *configs.Config) error {
 	for _, config := range config.Routes {
+		fmt.Printf("Source = %s, Gateway = %s\n", config.Source, config.Gateway)
 		_, dst, err := net.ParseCIDR(config.Destination)
 		if err != nil {
 			return err
