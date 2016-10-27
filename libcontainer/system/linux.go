@@ -27,6 +27,7 @@ const PR_SET_CHILD_SUBREAPER = 36
 type ParentDeathSignal int
 
 func (p ParentDeathSignal) Restore() error {
+	fmt.Printf("[parentDeathSignak] p = %v\n", p)
 	if p == 0 {
 		return nil
 	}
@@ -61,6 +62,7 @@ func Prlimit(pid, resource int, limit syscall.Rlimit) error {
 	return nil
 }
 
+// 设置父进程退出时，调用进程应该收到的信号
 func SetParentDeathSignal(sig uintptr) error {
 	if _, _, err := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_PDEATHSIG, sig, 0); err != 0 {
 		return err
@@ -68,6 +70,7 @@ func SetParentDeathSignal(sig uintptr) error {
 	return nil
 }
 
+// 获取父进程退出时，调用进程应该收到的信号
 func GetParentDeathSignal() (ParentDeathSignal, error) {
 	var sig int
 	_, _, err := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_GET_PDEATHSIG, uintptr(unsafe.Pointer(&sig)), 0)
@@ -77,6 +80,7 @@ func GetParentDeathSignal() (ParentDeathSignal, error) {
 	return ParentDeathSignal(sig), nil
 }
 
+// 设置 进程的 “keep capabilities” flag
 func SetKeepCaps() error {
 	if _, _, err := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_KEEPCAPS, 1, 0); err != 0 {
 		return err
@@ -85,6 +89,7 @@ func SetKeepCaps() error {
 	return nil
 }
 
+// 清除 进程的 “keep capabilities” flag
 func ClearKeepCaps() error {
 	if _, _, err := syscall.RawSyscall(syscall.SYS_PRCTL, syscall.PR_SET_KEEPCAPS, 0, 0); err != 0 {
 		return err
@@ -93,6 +98,7 @@ func ClearKeepCaps() error {
 	return nil
 }
 
+//  对话首领进程调用TIOCSCTTY为REQUEST的ioctl为对话期分配控制终端
 func Setctty() error {
 	if _, _, err := syscall.RawSyscall(syscall.SYS_IOCTL, 0, uintptr(syscall.TIOCSCTTY), 0); err != 0 {
 		return err
@@ -102,6 +108,7 @@ func Setctty() error {
 
 // RunningInUserNS detects whether we are currently running in a user namespace.
 // Copied from github.com/lxc/lxd/shared/util.go
+// 判断进程是否运行在新的User Namespace中
 func RunningInUserNS() bool {
 	file, err := os.Open("/proc/self/uid_map")
 	if err != nil {
@@ -130,10 +137,12 @@ func RunningInUserNS() bool {
 }
 
 // SetSubreaper sets the value i as the subreaper setting for the calling process
+// 设置进程，让其具备收养孤儿进程的能力
 func SetSubreaper(i int) error {
 	return Prctl(PR_SET_CHILD_SUBREAPER, uintptr(i), 0, 0, 0)
 }
 
+// Prctl 封装了系统调用syscall.SYS_PRCTL
 func Prctl(option int, arg2, arg3, arg4, arg5 uintptr) (err error) {
 	_, _, e1 := syscall.Syscall6(syscall.SYS_PRCTL, uintptr(option), arg2, arg3, arg4, arg5, 0)
 	if e1 != 0 {
