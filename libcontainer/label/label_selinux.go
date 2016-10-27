@@ -158,6 +158,7 @@ func GetPidLabel(pid int) (string, error) {
 
 // Init initialises the labeling system
 func Init() {
+	fmt.Println("selinux label.Init")
 	selinux.SelinuxEnabled()
 }
 

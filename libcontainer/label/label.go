@@ -2,6 +2,10 @@
 
 package label
 
+import (
+	"fmt"
+)
+
 // InitLabels returns the process label and file labels to be used within
 // the container.  A list of options can be passed into this function to alter
 // the labels.
@@ -46,6 +50,7 @@ func GetPidLabel(pid int) (string, error) {
 }
 
 func Init() {
+	fmt.Println("empty lable.Init")
 }
 
 func ReserveLabel(label string) error {
