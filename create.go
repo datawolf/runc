@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/urfave/cli"
@@ -54,11 +55,14 @@ command(s) that get executed on start, edit the args parameter of the spec. See
 		if err := revisePidFile(context); err != nil {
 			return err
 		}
+		fmt.Println("setupSpec from config.json")
 		spec, err := setupSpec(context)
 		if err != nil {
 			return err
 		}
+		fmt.Println("%%%%%% startContainers start %%%%%%%%")
 		status, err := startContainer(context, spec, true)
+		fmt.Println("%%%%%% startContainers end %%%%%%%%")
 		if err != nil {
 			return err
 		}
