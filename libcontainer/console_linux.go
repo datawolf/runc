@@ -110,10 +110,13 @@ func ioctl(fd uintptr, flag, data uintptr) error {
 	return nil
 }
 
+// 该函数其实在linux上已经存在，为什么不直接用呢？
+// 可能是Go对其没有封装，在bsd solaris其他系统上，该接口不进相同
+
 // unlockpt unlocks the slave pseudoterminal device corresponding to the master pseudoterminal referred to by f.
 // unlockpt should be called before opening the slave side of a pty.
 func unlockpt(f *os.File) error {
-	var u int32
+	var u int32 // u默认值为0
 	return ioctl(f.Fd(), syscall.TIOCSPTLCK, uintptr(unsafe.Pointer(&u)))
 }
 
@@ -125,6 +128,8 @@ func ptsname(f *os.File) (string, error) {
 	}
 	return fmt.Sprintf("/dev/pts/%d", n), nil
 }
+
+// 由于go没有对termios系列函数进行封装，所以这里使用tty_ioctl
 
 // saneTerminal sets the necessary tty_ioctl(4)s to ensure that a pty pair
 // created by us acts normally. In particular, a not-very-well-known default of
