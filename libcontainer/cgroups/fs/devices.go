@@ -3,6 +3,8 @@
 package fs
 
 import (
+	"fmt"
+
 	"github.com/opencontainers/runc/libcontainer/cgroups"
 	"github.com/opencontainers/runc/libcontainer/configs"
 	"github.com/opencontainers/runc/libcontainer/system"
@@ -37,12 +39,14 @@ func (s *DevicesGroup) Set(path string, cgroup *configs.Cgroup) error {
 			if dev.Allow {
 				file = "devices.allow"
 			}
+			fmt.Printf("[device set] %s\t[ Write file %s/%s]\n", dev.CgroupString(), path, file)
 			if err := writeFile(path, file, dev.CgroupString()); err != nil {
 				return err
 			}
 		}
 		return nil
 	}
+	//  新的spec中，以下代码一般不会执行，其存在的目的是保持兼容性
 	if cgroup.Resources.AllowAllDevices != nil {
 		if *cgroup.Resources.AllowAllDevices == false {
 			if err := writeFile(path, "devices.deny", "a"); err != nil {

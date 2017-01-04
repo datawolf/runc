@@ -101,6 +101,10 @@ type cgroupData struct {
 }
 
 func (m *Manager) Apply(pid int) (err error) {
+	fmt.Println("\n#### Apply")
+	fmt.Printf("Cgroup Manager = %#v\n", m)
+	fmt.Printf("config.Cgroup = %#v\n", m.Cgroups)
+	fmt.Printf("pid = %d\n", pid)
 	if m.Cgroups == nil {
 		return nil
 	}
@@ -114,9 +118,12 @@ func (m *Manager) Apply(pid int) (err error) {
 		return err
 	}
 
+	fmt.Printf("cgroup data = %#v\n", d)
 	m.Paths = make(map[string]string)
 	if c.Paths != nil {
+		// //  什么情况会执行到这里
 		for name, path := range c.Paths {
+			fmt.Printf("#### Enter Pid: name = %s, path = %s\n", name, path)
 			_, err := d.path(name)
 			if err != nil {
 				if cgroups.IsNotFound(err) {
@@ -126,10 +133,12 @@ func (m *Manager) Apply(pid int) (err error) {
 			}
 			m.Paths[name] = path
 		}
+		fmt.Printf("@@@@ m.Paths = %#v, pid = %d\n", m.Paths, pid)
 		return cgroups.EnterPid(m.Paths, pid)
 	}
 
 	for _, sys := range subsystems {
+		fmt.Printf("#### sub cgroups apply: %s\n", sys.Name())
 		// TODO: Apply should, ideally, be reentrant or be broken up into a separate
 		// create and join phase so that the cgroup hierarchy for a container can be
 		// created then join consists of writing the process pids to cgroup.procs
@@ -142,12 +151,15 @@ func (m *Manager) Apply(pid int) (err error) {
 			}
 			return err
 		}
+		// 将配置中的cgroup信息存储在manager的Paths中
 		m.Paths[sys.Name()] = p
 
 		if err := sys.Apply(d); err != nil {
 			return err
 		}
 	}
+	fmt.Printf("#### m = %#v\n", m)
+	fmt.Printf("#### End Apply\n\n")
 	return nil
 }
 
@@ -188,6 +200,7 @@ func (m *Manager) GetStats() (*cgroups.Stats, error) {
 }
 
 func (m *Manager) Set(container *configs.Config) error {
+	fmt.Println(m)
 	// If Paths are set, then we are just joining cgroups paths
 	// and there is no need to set any values.
 	if m.Cgroups.Paths != nil {
@@ -197,12 +210,15 @@ func (m *Manager) Set(container *configs.Config) error {
 	paths := m.GetPaths()
 	for _, sys := range subsystems {
 		path := paths[sys.Name()]
+		fmt.Printf("\ncgroup: %v,  path = %v\n", sys.Name(), path)
 		if err := sys.Set(path, container.Cgroups); err != nil {
 			return err
 		}
 	}
 
+	// 这已经设置完成了，为什么要特地的来检查cpu相关的配置
 	if m.Paths["cpu"] != "" {
+		fmt.Printf("container.Cgroup.Resources.CpuShare = %v\n", container.Cgroups.Resources.CpuShares)
 		if err := CheckCpushares(m.Paths["cpu"], container.Cgroups.Resources.CpuShares); err != nil {
 			return err
 		}
@@ -240,7 +256,7 @@ func (m *Manager) GetAllPids() ([]int, error) {
 }
 
 func getCgroupData(c *configs.Cgroup, pid int) (*cgroupData, error) {
-	root, err := getCgroupRoot()
+	root, err := getCgroupRoot() // root = /sys/fs/cgroup
 	if err != nil {
 		return nil, err
 	}
@@ -281,6 +297,7 @@ func (raw *cgroupData) parentPath(subsystem, mountpoint, root string) (string, e
 	if err != nil {
 		return "", err
 	}
+	fmt.Printf("\tinitPath=%s,reldir=%s\n", initPath, relDir)
 	return filepath.Join(mountpoint, relDir), nil
 }
 
@@ -296,12 +313,12 @@ func (raw *cgroupData) path(subsystem string) (string, error) {
 		// Sometimes subsystems can be mounted together as 'cpu,cpuacct'.
 		return filepath.Join(raw.root, filepath.Base(mnt), raw.innerPath), nil
 	}
-
 	parentPath, err := raw.parentPath(subsystem, mnt, root)
 	if err != nil {
 		return "", err
 	}
 
+	fmt.Printf("\tparentPath=%s,mnt=%s,root=%s\n", parentPath, mnt, root)
 	return filepath.Join(parentPath, raw.innerPath), nil
 }
 
@@ -346,10 +363,11 @@ func removePath(p string, err error) error {
 	return nil
 }
 
+// 检查cpu.shares中的数据是否等于c
 func CheckCpushares(path string, c int64) error {
 	var cpuShares int64
 
-	if c == 0 {
+	if c == 0 { // c == 0 时，直接返回
 		return nil
 	}
 

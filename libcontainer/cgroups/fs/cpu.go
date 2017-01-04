@@ -4,6 +4,7 @@ package fs
 
 import (
 	"bufio"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -68,21 +69,25 @@ func (s *CpuGroup) SetRtSched(path string, cgroup *configs.Cgroup) error {
 }
 
 func (s *CpuGroup) Set(path string, cgroup *configs.Cgroup) error {
+	fmt.Println("[cpu set] try to set cpu.shares")
 	if cgroup.Resources.CpuShares != 0 {
 		if err := writeFile(path, "cpu.shares", strconv.FormatInt(cgroup.Resources.CpuShares, 10)); err != nil {
 			return err
 		}
 	}
+	fmt.Println("[cpu set] try to set cpu.cfs_period_us")
 	if cgroup.Resources.CpuPeriod != 0 {
 		if err := writeFile(path, "cpu.cfs_period_us", strconv.FormatInt(cgroup.Resources.CpuPeriod, 10)); err != nil {
 			return err
 		}
 	}
+	fmt.Println("[cpu set] try to set cpu.cfs_quote_us")
 	if cgroup.Resources.CpuQuota != 0 {
 		if err := writeFile(path, "cpu.cfs_quota_us", strconv.FormatInt(cgroup.Resources.CpuQuota, 10)); err != nil {
 			return err
 		}
 	}
+	fmt.Println("[cpu set] try to set  cpu.rt_period_us and cpu.rt_runtime_us")
 	if err := s.SetRtSched(path, cgroup); err != nil {
 		return err
 	}

@@ -27,6 +27,7 @@ func (s *FreezerGroup) Apply(d *cgroupData) error {
 }
 
 func (s *FreezerGroup) Set(path string, cgroup *configs.Cgroup) error {
+	fmt.Println("[freezer set] set freezer.state")
 	switch cgroup.Resources.Freezer {
 	case configs.Frozen, configs.Thawed:
 		if err := writeFile(path, "freezer.state", string(cgroup.Resources.Freezer)); err != nil {

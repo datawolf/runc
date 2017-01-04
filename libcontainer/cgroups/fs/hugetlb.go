@@ -27,6 +27,7 @@ func (s *HugetlbGroup) Apply(d *cgroupData) error {
 }
 
 func (s *HugetlbGroup) Set(path string, cgroup *configs.Cgroup) error {
+	fmt.Println("[hugetlb set] set limit_in_bytes")
 	for _, hugetlb := range cgroup.Resources.HugetlbLimit {
 		if err := writeFile(path, strings.Join([]string{"hugetlb", hugetlb.Pagesize, "limit_in_bytes"}, "."), strconv.FormatUint(hugetlb.Limit, 10)); err != nil {
 			return err
