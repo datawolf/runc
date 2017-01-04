@@ -3,6 +3,7 @@
 package fs
 
 import (
+	"fmt"
 	"github.com/opencontainers/runc/libcontainer/cgroups"
 	"github.com/opencontainers/runc/libcontainer/configs"
 )
@@ -23,6 +24,7 @@ func (s *PerfEventGroup) Apply(d *cgroupData) error {
 }
 
 func (s *PerfEventGroup) Set(path string, cgroup *configs.Cgroup) error {
+	fmt.Println("[perf_event set] just return nil")
 	return nil
 }
 

@@ -139,32 +139,38 @@ func setMemoryAndSwap(path string, cgroup *configs.Cgroup) error {
 }
 
 func (s *MemoryGroup) Set(path string, cgroup *configs.Cgroup) error {
+	fmt.Println("[memory set] set memory and swap")
 	if err := setMemoryAndSwap(path, cgroup); err != nil {
 		return err
 	}
 
+	fmt.Println("[memory set] try to set kernel memory ")
 	if cgroup.Resources.KernelMemory != 0 {
 		if err := setKernelMemory(path, cgroup.Resources.KernelMemory); err != nil {
 			return err
 		}
 	}
 
+	fmt.Println("[memory set] try to set memory.soft_limit_in_bytes ")
 	if cgroup.Resources.MemoryReservation != 0 {
 		if err := writeFile(path, "memory.soft_limit_in_bytes", strconv.FormatInt(cgroup.Resources.MemoryReservation, 10)); err != nil {
 			return err
 		}
 	}
 
+	fmt.Println("[memory set] try to set memory.kmem.tcp.limit_in_bytes")
 	if cgroup.Resources.KernelMemoryTCP != 0 {
 		if err := writeFile(path, "memory.kmem.tcp.limit_in_bytes", strconv.FormatInt(cgroup.Resources.KernelMemoryTCP, 10)); err != nil {
 			return err
 		}
 	}
+	fmt.Println("[memory set] try to set memory.oom_control")
 	if cgroup.Resources.OomKillDisable {
 		if err := writeFile(path, "memory.oom_control", "1"); err != nil {
 			return err
 		}
 	}
+	fmt.Println("[memory set] try to set memory.swappiness")
 	if cgroup.Resources.MemorySwappiness == nil || int64(*cgroup.Resources.MemorySwappiness) == -1 {
 		return nil
 	} else if int64(*cgroup.Resources.MemorySwappiness) >= 0 && int64(*cgroup.Resources.MemorySwappiness) <= 100 {

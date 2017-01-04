@@ -3,6 +3,7 @@
 package fs
 
 import (
+	"fmt"
 	"github.com/opencontainers/runc/libcontainer/cgroups"
 	"github.com/opencontainers/runc/libcontainer/configs"
 )
@@ -25,6 +26,7 @@ func (s *NameGroup) Apply(d *cgroupData) error {
 }
 
 func (s *NameGroup) Set(path string, cgroup *configs.Cgroup) error {
+	fmt.Printf("[%s set] just return nil\n", s.GroupName)
 	return nil
 }
 

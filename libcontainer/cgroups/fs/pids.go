@@ -27,6 +27,7 @@ func (s *PidsGroup) Apply(d *cgroupData) error {
 }
 
 func (s *PidsGroup) Set(path string, cgroup *configs.Cgroup) error {
+	fmt.Println("[pids set] try to set pids.max")
 	if cgroup.Resources.PidsLimit != 0 {
 		// "max" is the fallback value.
 		limit := "max"

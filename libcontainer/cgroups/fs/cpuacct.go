@@ -38,6 +38,7 @@ func (s *CpuacctGroup) Apply(d *cgroupData) error {
 }
 
 func (s *CpuacctGroup) Set(path string, cgroup *configs.Cgroup) error {
+	fmt.Println("[cpuacct set] just return nil")
 	return nil
 }
 
