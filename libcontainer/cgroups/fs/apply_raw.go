@@ -133,6 +133,7 @@ func (m *Manager) Apply(pid int) (err error) {
 			}
 			m.Paths[name] = path
 		}
+		fmt.Printf("@@@@ m.Paths = %#v, pid = %d\n", m.Paths, pid)
 		return cgroups.EnterPid(m.Paths, pid)
 	}
 
@@ -150,6 +151,7 @@ func (m *Manager) Apply(pid int) (err error) {
 			}
 			return err
 		}
+		// 将配置中的cgroup信息存储在manager的Paths中
 		m.Paths[sys.Name()] = p
 
 		if err := sys.Apply(d); err != nil {
@@ -214,6 +216,7 @@ func (m *Manager) Set(container *configs.Config) error {
 		}
 	}
 
+	// 这已经设置完成了，为什么要特地的来检查cpu相关的配置
 	if m.Paths["cpu"] != "" {
 		fmt.Printf("container.Cgroup.Resources.CpuShare = %v\n", container.Cgroups.Resources.CpuShares)
 		if err := CheckCpushares(m.Paths["cpu"], container.Cgroups.Resources.CpuShares); err != nil {
@@ -294,6 +297,7 @@ func (raw *cgroupData) parentPath(subsystem, mountpoint, root string) (string, e
 	if err != nil {
 		return "", err
 	}
+	fmt.Printf("\tinitPath=%s,reldir=%s\n", initPath, relDir)
 	return filepath.Join(mountpoint, relDir), nil
 }
 
@@ -309,12 +313,12 @@ func (raw *cgroupData) path(subsystem string) (string, error) {
 		// Sometimes subsystems can be mounted together as 'cpu,cpuacct'.
 		return filepath.Join(raw.root, filepath.Base(mnt), raw.innerPath), nil
 	}
-
 	parentPath, err := raw.parentPath(subsystem, mnt, root)
 	if err != nil {
 		return "", err
 	}
 
+	fmt.Printf("\tparentPath=%s,mnt=%s,root=%s\n", parentPath, mnt, root)
 	return filepath.Join(parentPath, raw.innerPath), nil
 }
 
