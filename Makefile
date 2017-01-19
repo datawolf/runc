@@ -29,7 +29,7 @@ SHELL := $(shell command -v bash 2>/dev/null)
 .DEFAULT: runc
 
 runc: $(SOURCES) | $(RUNC_LINK)
-	go build -i -ldflags "-X main.gitCommit=${COMMIT} -X main.version=${VERSION}" -tags "$(BUILDTAGS)" -o runc .
+	go build  -i -gcflags "-N -l" -ldflags "-X main.gitCommit=${COMMIT} -X main.version=${VERSION}" -tags "$(BUILDTAGS)" -o runc .
 
 all: runc recvtty
 
