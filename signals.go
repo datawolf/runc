@@ -20,6 +20,7 @@ const signalBufferSize = 2048
 func newSignalHandler(enableSubreaper bool) *signalHandler {
 	if enableSubreaper {
 		// set us as the subreaper before registering the signal handler for the container
+		// 设置进程，让其具备收养孤儿进程的能力
 		if err := system.SetSubreaper(1); err != nil {
 			logrus.Warn(err)
 		}
@@ -28,6 +29,7 @@ func newSignalHandler(enableSubreaper bool) *signalHandler {
 	// incase we are not processing them fast enough.
 	s := make(chan os.Signal, signalBufferSize)
 	// handle all signals for the process.
+	//  进程所有的信号都传递给s chanel
 	signal.Notify(s)
 	return &signalHandler{
 		signals: s,
@@ -54,9 +56,11 @@ func (h *signalHandler) forward(process *libcontainer.Process, tty *tty) (int, e
 	if err != nil {
 		return -1, err
 	}
+	logrus.Infof("\t[forword] pid1  = %v", pid1)
 	// perform the initial tty resize.
 	tty.resize()
 	for s := range h.signals {
+		logrus.Infof("\t[forword] get signal = %v", s)
 		switch s {
 		case syscall.SIGWINCH:
 			tty.resize()
@@ -69,7 +73,7 @@ func (h *signalHandler) forward(process *libcontainer.Process, tty *tty) (int, e
 				logrus.WithFields(logrus.Fields{
 					"pid":    e.pid,
 					"status": e.status,
-				}).Debug("process exited")
+				}).Info("process exited")
 				if e.pid == pid1 {
 					// call Wait() on the process even though we already have the exit
 					// status because we must ensure that any of the go specific process
@@ -79,7 +83,7 @@ func (h *signalHandler) forward(process *libcontainer.Process, tty *tty) (int, e
 				}
 			}
 		default:
-			logrus.Debugf("sending signal to process %s", s)
+			logrus.Infof("sending signal to process %s", s)
 			if err := syscall.Kill(pid1, s.(syscall.Signal)); err != nil {
 				logrus.Error(err)
 			}
@@ -90,16 +94,20 @@ func (h *signalHandler) forward(process *libcontainer.Process, tty *tty) (int, e
 
 // reap runs wait4 in a loop until we have finished processing any existing exits
 // then returns all exits to the main event loop for further processing.
+// 这里收集所有退出的子进程的退出信息。
 func (h *signalHandler) reap() (exits []exit, err error) {
 	var (
 		ws  syscall.WaitStatus
 		rus syscall.Rusage
 	)
 	for {
+		// WNOHANG     return immediately if no child has exited
+		// 如果没有子进程退出，则立即返回
 		pid, err := syscall.Wait4(-1, &ws, syscall.WNOHANG, &rus)
 		if err != nil {
+			// 没有子进程退出
 			if err == syscall.ECHILD {
-				return exits, nil
+				return exits, nil // 返回已经收集到的进程退出信息
 			}
 			return nil, err
 		}
