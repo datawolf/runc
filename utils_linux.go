@@ -27,10 +27,12 @@ var container libcontainer.Container
 // loadFactory returns the configured factory instance for execing containers.
 func loadFactory(context *cli.Context) (libcontainer.Factory, error) {
 	root := context.GlobalString("root")
+	fmt.Printf("[loadFactory] root = %v\n", root)
 	abs, err := filepath.Abs(root)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("[loadFactory] the default cgroupManager is fs")
 	cgroupManager := libcontainer.Cgroupfs
 	if context.GlobalBool("systemd-cgroup") {
 		if systemd.UseSystemd() {
@@ -39,6 +41,7 @@ func loadFactory(context *cli.Context) (libcontainer.Factory, error) {
 			return nil, fmt.Errorf("systemd cgroup flag passed, but systemd support for managing cgroups is not available")
 		}
 	}
+	fmt.Printf("[loadFactory] libcontainer.New\n")
 	return libcontainer.New(abs, cgroupManager, libcontainer.CriuPath(context.GlobalString("criu")))
 }
 
@@ -49,7 +52,9 @@ func getContainer(context *cli.Context) (libcontainer.Container, error) {
 	if id == "" {
 		return nil, errEmptyID
 	}
+	fmt.Printf("[getContainer] id = %v\n", id)
 	factory, err := loadFactory(context)
+	fmt.Println("[getContainer] loadFactory DONE")
 	if err != nil {
 		return nil, err
 	}
@@ -71,6 +76,7 @@ func getDefaultImagePath(context *cli.Context) string {
 // newProcess returns a new libcontainer Process with the arguments from the
 // spec and stdio from the current process.
 func newProcess(p specs.Process) (*libcontainer.Process, error) {
+	fmt.Println("[newProcess] return a new libcontainer Process")
 	lp := &libcontainer.Process{
 		Args: p.Args,
 		Env:  p.Env,
@@ -82,10 +88,13 @@ func newProcess(p specs.Process) (*libcontainer.Process, error) {
 		NoNewPrivileges: &p.NoNewPrivileges,
 		AppArmorProfile: p.ApparmorProfile,
 	}
+	logrus.Info("[newProcess] create an libcontainer.Process")
 	for _, gid := range p.User.AdditionalGids {
+		logrus.Info("[newProcess] add additionalGids to libcontainer.Process")
 		lp.AdditionalGroups = append(lp.AdditionalGroups, strconv.FormatUint(uint64(gid), 10))
 	}
 	for _, rlimit := range p.Rlimits {
+		logrus.Info("[newProcess] append p.Rlimits to libcontainer.Process.Rlimits")
 		rl, err := createLibContainerRlimit(rlimit)
 		if err != nil {
 			return nil, err
@@ -157,6 +166,7 @@ func createPidFile(path string, process *libcontainer.Process) error {
 }
 
 func createContainer(context *cli.Context, id string, spec *specs.Spec) (libcontainer.Container, error) {
+	fmt.Println("[createContainer] create libcontainer config using specconv")
 	config, err := specconv.CreateLibcontainerConfig(&specconv.CreateOpts{
 		CgroupName:       id,
 		UseSystemdCgroup: context.GlobalBool("systemd-cgroup"),
@@ -168,10 +178,12 @@ func createContainer(context *cli.Context, id string, spec *specs.Spec) (libcont
 		return nil, err
 	}
 
+	fmt.Println("[createContainer] loadFactory")
 	factory, err := loadFactory(context)
 	if err != nil {
 		return nil, err
 	}
+	fmt.Println("[createContainer] factory create an container according to the container-id and config")
 	return factory.Create(id, config)
 }
 
@@ -191,11 +203,13 @@ func (r *runner) terminalinfo() *libcontainer.TerminalInfo {
 }
 
 func (r *runner) run(config *specs.Process) (int, error) {
+	logrus.Info("[runer.run] create new Process using spec.Process")
 	process, err := newProcess(*config)
 	if err != nil {
 		r.destroy()
 		return -1, err
 	}
+
 	if len(r.listenFDs) > 0 {
 		process.Env = append(process.Env, fmt.Sprintf("LISTEN_FDS=%d", len(r.listenFDs)), "LISTEN_PID=1")
 		process.ExtraFiles = append(process.ExtraFiles, r.listenFDs...)
@@ -233,12 +247,14 @@ func (r *runner) run(config *specs.Process) (int, error) {
 	// Setting up IO is a two stage process. We need to modify process to deal
 	// with detaching containers, and then we get a tty after the container has
 	// started.
+	logrus.Infof("[runner.run] newSingalHandler r.enableSubreaper = %v", r.enableSubreaper)
 	handler := newSignalHandler(r.enableSubreaper)
 	tty, err := setupIO(process, rootuid, rootgid, config.Terminal, detach)
 	if err != nil {
 		r.destroy()
 		return -1, err
 	}
+	logrus.Info("[runner.run] ####### STARTING startFn ##########")
 	if err = startFn(process); err != nil {
 		r.destroy()
 		return -1, err
@@ -283,6 +299,8 @@ func (r *runner) run(config *specs.Process) (int, error) {
 			return -1, err
 		}
 	}
+	logrus.Info("[runner.run] #######  END startFn ##########")
+	logrus.Info("[runner.run] tty.ClosePostStart")
 
 	if err = tty.ClosePostStart(); err != nil {
 		r.terminate(process)
@@ -290,6 +308,7 @@ func (r *runner) run(config *specs.Process) (int, error) {
 		return -1, err
 	}
 	if r.pidFile != "" {
+		logrus.Info("[runner.run] create Pid file")
 		if err = createPidFile(r.pidFile, process); err != nil {
 			r.terminate(process)
 			r.destroy()
@@ -297,12 +316,16 @@ func (r *runner) run(config *specs.Process) (int, error) {
 		}
 	}
 	if detach {
+		logrus.Info("[runer.run] returned by detach or create")
 		return 0, nil
 	}
+	logrus.Info("[runner.run] handler.forward")
 	status, err := handler.forward(process, tty)
+	logrus.Info("[runner.run] handler.forward done")
 	if err != nil {
 		r.terminate(process)
 	}
+	logrus.Info("[runner.run] before destroy")
 	r.destroy()
 	return status, err
 }
@@ -332,19 +355,23 @@ func validateProcessSpec(spec *specs.Process) error {
 }
 
 func startContainer(context *cli.Context, spec *specs.Spec, create bool) (int, error) {
+	fmt.Println("[startContainer] get the container id form context.Args.First")
 	id := context.Args().First()
 	if id == "" {
 		return -1, errEmptyID
 	}
 	container, err := createContainer(context, id, spec)
+	fmt.Println("[startContainer] Create container Done")
 	if err != nil {
 		return -1, err
 	}
 	// Support on-demand socket activation by passing file descriptors into the container init process.
 	listenFDs := []*os.File{}
+	fmt.Println("[startContainer] try to get env LISTEN_FDS")
 	if os.Getenv("LISTEN_FDS") != "" {
 		listenFDs = activation.Files(false)
 	}
+	fmt.Printf("[startContainer] create a runner and run it\n")
 	r := &runner{
 		enableSubreaper: !context.Bool("no-subreaper"),
 		shouldDestroy:   true,
@@ -355,5 +382,6 @@ func startContainer(context *cli.Context, spec *specs.Spec, create bool) (int, e
 		pidFile:         context.String("pid-file"),
 		create:          create,
 	}
+	fmt.Println("[startContainer] Create runner")
 	return r.run(&spec.Process)
 }
