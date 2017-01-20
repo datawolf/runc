@@ -28,6 +28,7 @@ func (l *linuxSetnsInit) getSessionRingName() string {
 
 func (l *linuxSetnsInit) Init() error {
 	if !l.config.Config.NoNewKeyring {
+		fmt.Printf("[linuxSetnsInit] l.getSessionRingName() = %v\n", l.getSessionRingName())
 		// do not inherit the parent's session keyring
 		if _, err := keys.JoinSessionKeyring(l.getSessionRingName()); err != nil {
 			return err
@@ -42,11 +43,13 @@ func (l *linuxSetnsInit) Init() error {
 		}
 	}
 	if l.config.NoNewPrivileges {
+		fmt.Printf("[linuxSetnsInit] pr_set_no_new_privs\n")
 		if err := system.Prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0); err != nil {
 			return err
 		}
 	}
 	if l.config.Config.Seccomp != nil {
+		fmt.Printf("[linuxSetnsInit] 初始化 seccomp\n")
 		if err := seccomp.InitSeccomp(l.config.Config.Seccomp); err != nil {
 			return err
 		}
@@ -60,6 +63,7 @@ func (l *linuxSetnsInit) Init() error {
 	if err := label.SetProcessLabel(l.config.ProcessLabel); err != nil {
 		return err
 	}
+	fmt.Printf("[linuxSetnsInit] 开始执行 用户的命令\n")
 	// close the statedir fd before exec because the kernel resets dumpable in the wrong order
 	// https://github.com/torvalds/linux/blob/v4.9/fs/exec.c#L1290-L1318
 	syscall.Close(l.stateDirFD)
