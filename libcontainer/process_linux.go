@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"syscall"
 
+	"github.com/Sirupsen/logrus"
 	"github.com/opencontainers/runc/libcontainer/cgroups"
 	"github.com/opencontainers/runc/libcontainer/configs"
 	"github.com/opencontainers/runc/libcontainer/system"
@@ -63,11 +64,14 @@ func (p *setnsProcess) signal(sig os.Signal) error {
 	if !ok {
 		return errors.New("os: unsupported signal type")
 	}
+	logrus.Infof("setnsProcess: p.pid() = %v (%v)\n", p.pid(), s)
+	fmt.Fprintf(os.Stderr, "setnsProcess: p.pid() = %v (%v)\n", p.pid(), s)
 	return syscall.Kill(p.pid(), s)
 }
 
 func (p *setnsProcess) start() (err error) {
 	defer p.parentPipe.Close()
+	fmt.Println("[setnsProcess] start runc setns init")
 	err = p.cmd.Start()
 	p.childPipe.Close()
 	p.rootDir.Close()
@@ -75,27 +79,33 @@ func (p *setnsProcess) start() (err error) {
 		return newSystemErrorWithCause(err, "starting setns process")
 	}
 	if p.bootstrapData != nil {
+		fmt.Println("[setnsProcess] sending bootstrapData to runc setns init")
 		if _, err := io.Copy(p.parentPipe, p.bootstrapData); err != nil {
 			return newSystemErrorWithCause(err, "copying bootstrap data to pipe")
 		}
 	}
+	fmt.Println("[setnsProcess] runing exec setns process for  setns init")
 	if err = p.execSetns(); err != nil {
 		return newSystemErrorWithCause(err, "executing setns process")
 	}
 	if len(p.cgroupPaths) > 0 {
+		fmt.Printf("[setnsProcess] add pid %d to cgroups\n", p.pid())
 		if err := cgroups.EnterPid(p.cgroupPaths, p.pid()); err != nil {
 			return newSystemErrorWithCausef(err, "adding pid %d to cgroups", p.pid())
 		}
 	}
 	// set oom_score_adj
+	fmt.Println("[setnsProcess] setting oom score")
 	if err := setOomScoreAdj(p.config.Config.OomScoreAdj, p.pid()); err != nil {
 		return newSystemErrorWithCause(err, "setting oom score")
 	}
 	// set rlimits, this has to be done here because we lose permissions
 	// to raise the limits once we enter a user-namespace
+	fmt.Println("[setnsProcess] setting rlimits for process")
 	if err := setupRlimits(p.config.Rlimits, p.pid()); err != nil {
 		return newSystemErrorWithCause(err, "setting rlimits for process")
 	}
+	fmt.Println("[setnsProcess] writing config to pipe")
 	if err := utils.WriteJSON(p.parentPipe, p.config); err != nil {
 		return newSystemErrorWithCause(err, "writing config to pipe")
 	}
@@ -133,6 +143,7 @@ func (p *setnsProcess) start() (err error) {
 		return nil
 	})
 
+	fmt.Println("[setnsProcess] calling shutdwon on init pipe")
 	if err := syscall.Shutdown(int(p.parentPipe.Fd()), syscall.SHUT_WR); err != nil {
 		return newSystemErrorWithCause(err, "calling shutdown on init pipe")
 	}
@@ -141,6 +152,7 @@ func (p *setnsProcess) start() (err error) {
 		p.wait()
 		return ierr
 	}
+	fmt.Println("[setnsProcess] child exit")
 	return nil
 }
 
@@ -149,7 +161,9 @@ func (p *setnsProcess) start() (err error) {
 // before the go runtime boots, we wait on the process to die and receive the child's pid
 // over the provided pipe.
 func (p *setnsProcess) execSetns() error {
+	fmt.Println("[execSetns] before wait...")
 	status, err := p.cmd.Process.Wait()
+	fmt.Println("[execSetns] after wait...")
 	if err != nil {
 		p.cmd.Wait()
 		return newSystemErrorWithCause(err, "waiting on setns process to finish")
@@ -159,10 +173,12 @@ func (p *setnsProcess) execSetns() error {
 		return newSystemError(&exec.ExitError{ProcessState: status})
 	}
 	var pid *pid
+	fmt.Println("[execSetns] wating for pid...")
 	if err := json.NewDecoder(p.parentPipe).Decode(&pid); err != nil {
 		p.cmd.Wait()
 		return newSystemErrorWithCause(err, "reading pid from init pipe")
 	}
+	fmt.Printf("[execSetns] get pid = %d\n", pid.Pid)
 	process, err := os.FindProcess(pid.Pid)
 	if err != nil {
 		return err
@@ -242,10 +258,12 @@ func (p *initProcess) execSetns() error {
 		return &exec.ExitError{ProcessState: status}
 	}
 	var pid *pid
+	fmt.Println("[execSetns] wating for pid...")
 	if err := json.NewDecoder(p.parentPipe).Decode(&pid); err != nil {
 		p.cmd.Wait()
 		return err
 	}
+	fmt.Printf("[execSetns] get pid = %d\n", pid.Pid)
 	process, err := os.FindProcess(pid.Pid)
 	if err != nil {
 		return err
@@ -256,7 +274,10 @@ func (p *initProcess) execSetns() error {
 }
 
 func (p *initProcess) start() error {
+	logrus.Info("[initProcess.start] begin")
 	defer p.parentPipe.Close()
+	logrus.Info("[initProcess.start] start 'runc init'")
+	logrus.Info("[initProcess.start] starting  init process command")
 	err := p.cmd.Start()
 	p.process.ops = p
 	p.childPipe.Close()
@@ -265,22 +286,32 @@ func (p *initProcess) start() error {
 		p.process.ops = nil
 		return newSystemErrorWithCause(err, "starting init process command")
 	}
+	logrus.Info("[initProcess.start] 将p.bootstrapData拷贝到p.parentPipe，这样子进程就可以从childPipe读取了")
 	if _, err := io.Copy(p.parentPipe, p.bootstrapData); err != nil {
 		return err
 	}
+	logrus.Info("[initProcess.start] running exec setns process for init")
+	logrus.Info("[initProcess.start] 在这里Go进程等待C程序，等待C程序将子进程id发送给go runtime")
 	if err := p.execSetns(); err != nil {
 		return newSystemErrorWithCause(err, "running exec setns process for init")
 	}
+	logrus.Info("[initProcess.start] C进程退出, 但其fork出的子进程没有退出，仍在继续执行")
 	// Save the standard descriptor names before the container process
 	// can potentially move them (e.g., via dup2()).  If we don't do this now,
 	// we won't know at checkpoint time which file descriptor to look up.
+	logrus.Infof("[initProcess.start] getting pipe fds for pid %d", p.pid())
 	fds, err := getPipeFds(p.pid())
+	logrus.Infof("[initProcess.start] fds=%v", fds)
 	if err != nil {
 		return newSystemErrorWithCausef(err, "getting pipe fds for pid %d", p.pid())
 	}
+	logrus.Info("[initProcess start] setExternalDescriptors")
 	p.setExternalDescriptors(fds)
 	// Do this before syncing with child so that no children
 	// can escape the cgroup
+	logrus.Info("[initProcess start] applying cgroup configuration for process")
+	logrus.Info("[initProcess start] create /sys/fs/cgroup/<subsystem>/<container name> dir")
+	logrus.Info("[initProcess start] 开始创建Cgroup相关的文件夹")
 	if err := p.manager.Apply(p.pid()); err != nil {
 		return newSystemErrorWithCause(err, "applying cgroup configuration for process")
 	}
@@ -290,9 +321,11 @@ func (p *initProcess) start() error {
 			p.manager.Destroy()
 		}
 	}()
+	logrus.Info("[initProcess start] creating network interfaces")
 	if err := p.createNetworkInterfaces(); err != nil {
 		return newSystemErrorWithCause(err, "creating network interfaces")
 	}
+	logrus.Info("[initProcess start] sending config to init process(发送给C init的子进程)")
 	if err := p.sendConfig(); err != nil {
 		return newSystemErrorWithCause(err, "sending config to init process")
 	}
@@ -323,19 +356,23 @@ func (p *initProcess) start() error {
 				return newSystemErrorWithCause(err, "writing syncT 'ack fd'")
 			}
 		case procReady:
+			logrus.Info("[initProcess start] proceReady: setting cgroup config for ready process")
 			if err := p.manager.Set(p.config.Config); err != nil {
 				return newSystemErrorWithCause(err, "setting cgroup config for ready process")
 			}
 			// set oom_score_adj
+			logrus.Info("[initProcess start] proceReady: setting oom score for ready process")
 			if err := setOomScoreAdj(p.config.Config.OomScoreAdj, p.pid()); err != nil {
 				return newSystemErrorWithCause(err, "setting oom score for ready process")
 			}
 			// set rlimits, this has to be done here because we lose permissions
 			// to raise the limits once we enter a user-namespace
+			logrus.Info("[initProcess start] proceReady: setting rlimits for ready process")
 			if err := setupRlimits(p.config.Rlimits, p.pid()); err != nil {
 				return newSystemErrorWithCause(err, "setting rlimits for ready process")
 			}
 			// call prestart hooks
+			logrus.Info("[initProcess start] proceReady: call prestart hooks")
 			if !p.config.Config.Namespaces.Contains(configs.NEWNS) {
 				if p.config.Config.Hooks != nil {
 					s := configs.HookState{
@@ -352,11 +389,13 @@ func (p *initProcess) start() error {
 				}
 			}
 			// Sync with child.
+			logrus.Info("[initProcess start] proceReady: reading syscT run type")
 			if err := writeSync(p.parentPipe, procRun); err != nil {
 				return newSystemErrorWithCause(err, "writing syncT 'run'")
 			}
 			sentRun = true
 		case procHooks:
+			logrus.Info("[initProcess start] procHooks:  call prestart hooks")
 			if p.config.Config.Hooks != nil {
 				s := configs.HookState{
 					Version:    p.container.config.Version,
@@ -371,6 +410,7 @@ func (p *initProcess) start() error {
 				}
 			}
 			// Sync with child.
+			logrus.Info("[initProcess start] procHooks: reading syscT resume type")
 			if err := writeSync(p.parentPipe, procResume); err != nil {
 				return newSystemErrorWithCause(err, "writing syncT 'resume'")
 			}
@@ -385,12 +425,15 @@ func (p *initProcess) start() error {
 	if !sentRun {
 		return newSystemErrorWithCause(ierr, "container init")
 	}
+	logrus.Info("[initProcess start] container init done")
 	if p.config.Config.Namespaces.Contains(configs.NEWNS) && !sentResume {
 		return newSystemError(fmt.Errorf("could not synchronise after executing prestart hooks with container process"))
 	}
+	logrus.Info("[initProcess start] synchronise after executing prestart hooks with container process")
 	if err := syscall.Shutdown(int(p.parentPipe.Fd()), syscall.SHUT_WR); err != nil {
 		return newSystemErrorWithCause(err, "shutting down init pipe")
 	}
+	logrus.Info("[initProcess start] shutting down init pipe")
 
 	// Must be done after Shutdown so the child will exit and we can wait for it.
 	if ierr != nil {
@@ -456,6 +499,8 @@ func (p *initProcess) signal(sig os.Signal) error {
 	if !ok {
 		return errors.New("os: unsupported signal type")
 	}
+	logrus.Infof("initProcess: p.pid() = %v (%v)\n", p.pid(), s)
+	fmt.Fprintf(os.Stderr, "initProcess: p.pid() = %v (%v)\n", p.pid(), s)
 	return syscall.Kill(p.pid(), s)
 }
 
