@@ -41,21 +41,26 @@ func needsSetupDev(config *configs.Config) bool {
 // because console setup happens inside the caller. You must call
 // finalizeRootfs in order to finish the rootfs setup.
 func prepareRootfs(pipe io.ReadWriter, config *configs.Config) (err error) {
+	fmt.Println("\t[prepareRootfs] preparing rootfs")
 	if err := prepareRoot(config); err != nil {
 		return newSystemErrorWithCause(err, "preparing rootfs")
 	}
 
 	setupDev := needsSetupDev(config)
+	fmt.Printf("\t[prepareRootfs] 判断是否需要setup dev [%v]\n", setupDev)
 	for _, m := range config.Mounts {
+		fmt.Printf("\t[prepareRootfs] 判断是否需要setup dev [%v]\n", setupDev)
 		for _, precmd := range m.PremountCmds {
 			if err := mountCmd(precmd); err != nil {
 				return newSystemErrorWithCause(err, "running premount command")
 			}
 		}
+		fmt.Printf("\t\t[prepareRootfs]Device: %s [%s | %s]\n", m.Device, config.Rootfs, config.MountLabel)
 
 		if err := mountToRootfs(m, config.Rootfs, config.MountLabel); err != nil {
 			return newSystemErrorWithCausef(err, "mounting %q to rootfs %q at %q", m.Source, config.Rootfs, m.Destination)
 		}
+		//	fmt.Println("\t\t[prepareRootfs] 如果有，就执行postmount cmds")
 
 		for _, postcmd := range m.PostmountCmds {
 			if err := mountCmd(postcmd); err != nil {
@@ -65,12 +70,15 @@ func prepareRootfs(pipe io.ReadWriter, config *configs.Config) (err error) {
 	}
 
 	if setupDev {
+		fmt.Println("\t[prepareRootfs] creating device nodes")
 		if err := createDevices(config); err != nil {
 			return newSystemErrorWithCause(err, "creating device nodes")
 		}
+		fmt.Println("\t[prepareRootfs] setting up ptmx")
 		if err := setupPtmx(config); err != nil {
 			return newSystemErrorWithCause(err, "setting up ptmx")
 		}
+		fmt.Println("\t[prepareRootfs] setting up /dev symlinks")
 		if err := setupDevSymlinks(config.Rootfs); err != nil {
 			return newSystemErrorWithCause(err, "setting up /dev symlinks")
 		}
@@ -80,9 +88,11 @@ func prepareRootfs(pipe io.ReadWriter, config *configs.Config) (err error) {
 	// The hooks are run after the mounts are setup, but before we switch to the new
 	// root, so that the old root is still available in the hooks for any mount
 	// manipulations.
+	fmt.Println("\t[prepareRootfs] 发送syncParentHooks给父进程，让其开始执行 pre-start hooks")
 	if err := syncParentHooks(pipe); err != nil {
 		return err
 	}
+	fmt.Printf("\t[prepareRootfs] changing wording dir to %q\n", config.Rootfs)
 
 	// The reason these operations are done here rather than in finalizeRootfs
 	// is because the console-handling code gets quite sticky if we have to set
@@ -97,8 +107,10 @@ func prepareRootfs(pipe io.ReadWriter, config *configs.Config) (err error) {
 	}
 
 	if config.NoPivotRoot {
+		fmt.Println("\t[prepareRootfs] msMoveRoot")
 		err = msMoveRoot(config.Rootfs)
 	} else {
+		fmt.Println("\t[prepareRootfs] pivotRoot")
 		err = pivotRoot(config.Rootfs)
 	}
 	if err != nil {
@@ -106,6 +118,7 @@ func prepareRootfs(pipe io.ReadWriter, config *configs.Config) (err error) {
 	}
 
 	if setupDev {
+		fmt.Println("\t[prepareRootfs] reopening /dev/null inside container")
 		if err := reOpenDevNull(); err != nil {
 			return newSystemErrorWithCause(err, "reopening /dev/null inside container")
 		}
@@ -118,6 +131,7 @@ func prepareRootfs(pipe io.ReadWriter, config *configs.Config) (err error) {
 // to ro if necessary. You must call prepareRootfs first.
 func finalizeRootfs(config *configs.Config) (err error) {
 	// remount dev as ro if specified
+	fmt.Println("\t[finalizeRootfs] remounting dev as read only if specifed")
 	for _, m := range config.Mounts {
 		if libcontainerUtils.CleanPath(m.Destination) == "/dev" {
 			if m.Flags&syscall.MS_RDONLY == syscall.MS_RDONLY {
@@ -130,6 +144,7 @@ func finalizeRootfs(config *configs.Config) (err error) {
 	}
 
 	// set rootfs ( / ) as readonly
+	fmt.Println("\t[finalizeRootfs] set rootfs as readonly")
 	if config.Readonlyfs {
 		if err := setReadonly(); err != nil {
 			return newSystemErrorWithCause(err, "setting rootfs as readonly")
