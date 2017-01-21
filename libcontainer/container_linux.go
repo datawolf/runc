@@ -185,9 +185,11 @@ func (c *linuxContainer) Set(config configs.Config) error {
 }
 
 func (c *linuxContainer) Start(process *Process) error {
+	logrus.Info("[linuxContainer.Start]")
 	c.m.Lock()
 	defer c.m.Unlock()
 	status, err := c.currentStatus()
+	logrus.Infof("[linuxContainer.Start] status = %v", status)
 	if err != nil {
 		return err
 	}
@@ -235,10 +237,13 @@ func (c *linuxContainer) exec() error {
 }
 
 func (c *linuxContainer) start(process *Process, isInit bool) error {
+	logrus.Info("\t[linuxContainer.start] create new parentProcess")
 	parent, err := c.newParentProcess(process, isInit)
+	logrus.Info("\t[linuxContainer.start] create new parentProcess done.")
 	if err != nil {
 		return newSystemErrorWithCause(err, "creating new parent process")
 	}
+	logrus.Info("\t[linuxContainer.start] staring container process")
 	if err := parent.start(); err != nil {
 		// terminate the process to ensure that it properly is reaped.
 		if err := parent.terminate(); err != nil {
@@ -246,15 +251,20 @@ func (c *linuxContainer) start(process *Process, isInit bool) error {
 		}
 		return newSystemErrorWithCause(err, "starting container process")
 	}
+	logrus.Info("\t[linuxContainer.start] ending container process")
 	// generate a timestamp indicating when the container was started
 	c.created = time.Now().UTC()
 	c.state = &runningState{
 		c: c,
 	}
+	logrus.Info("\t[linuxContainer.start] generate a timestamp")
+	logrus.Infof("\t[linuxContainer.start] isInit = %v", isInit)
 	if isInit {
+		logrus.Info("\t[linuxContainer.start] enter isInit")
 		c.state = &createdState{
 			c: c,
 		}
+		logrus.Info("\t[linuxContainer.start] updateState")
 		state, err := c.updateState(parent)
 		if err != nil {
 			return err
@@ -262,6 +272,7 @@ func (c *linuxContainer) start(process *Process, isInit bool) error {
 		c.initProcessStartTime = state.InitProcessStartTime
 
 		if c.config.Hooks != nil {
+			logrus.Info("\t[linuxContainer.start] hook.run if available")
 			s := configs.HookState{
 				Version:    c.config.Version,
 				ID:         c.id,
@@ -282,6 +293,7 @@ func (c *linuxContainer) start(process *Process, isInit bool) error {
 }
 
 func (c *linuxContainer) Signal(s os.Signal, all bool) error {
+	logrus.Infof("################### Signal = %v, all = %v\n", s, all)
 	if all {
 		return signalAllProcesses(c.cgroupManager, s)
 	}
@@ -292,21 +304,27 @@ func (c *linuxContainer) Signal(s os.Signal, all bool) error {
 }
 
 func (c *linuxContainer) newParentProcess(p *Process, doInit bool) (parentProcess, error) {
+	logrus.Info("\t\tnewParentProcess: create parent and child pipe")
 	parentPipe, childPipe, err := newPipe()
 	if err != nil {
 		return nil, newSystemErrorWithCause(err, "creating new init pipe")
 	}
+	logrus.Infof("\t\tnewParentProcess: open root dir  = %v", c.root)
 	rootDir, err := os.Open(c.root)
 	if err != nil {
 		return nil, err
 	}
+	logrus.Info("\t\tnewParentProcess: commandTemplate")
 	cmd, err := c.commandTemplate(p, childPipe, rootDir)
 	if err != nil {
 		return nil, newSystemErrorWithCause(err, "creating new command template")
 	}
+	logrus.Infof("\t\tnewParentProcess: cmd = %v", cmd)
 	if !doInit {
+		logrus.Info("\t\tnewParentProcess: setnsProcess")
 		return c.newSetnsProcess(p, cmd, parentPipe, childPipe, rootDir)
 	}
+	logrus.Info("\t\tnewParentProcess: initProcess")
 	return c.newInitProcess(p, cmd, parentPipe, childPipe, rootDir)
 }
 
@@ -333,6 +351,7 @@ func (c *linuxContainer) commandTemplate(p *Process, childPipe, rootDir *os.File
 }
 
 func (c *linuxContainer) newInitProcess(p *Process, cmd *exec.Cmd, parentPipe, childPipe, rootDir *os.File) (*initProcess, error) {
+	logrus.Info("\t\tnewInitProcess: append _INITTYPE to cmd.Env")
 	cmd.Env = append(cmd.Env, "_LIBCONTAINER_INITTYPE="+string(initStandard))
 	nsMaps := make(map[configs.NamespaceType]string)
 	for _, ns := range c.config.Namespaces {
@@ -341,6 +360,10 @@ func (c *linuxContainer) newInitProcess(p *Process, cmd *exec.Cmd, parentPipe, c
 		}
 	}
 	_, sharePidns := nsMaps[configs.NEWPID]
+	logrus.Infof("\t\tnewInitProcess: nsMaps = %v\n", nsMaps)
+	logrus.Info("\t\tnewInitProcess: before bootstrapData")
+	logrus.Info("\t\tnewInitProcess: 根据c.config.Namespaces中的信息，生成要传递给clone系统调用的flags")
+	logrus.Info("\t\tnewInitProcess: encodes the necessary data in netlink binary format")
 	data, err := c.bootstrapData(c.config.Namespaces.CloneFlags(), nsMaps)
 	if err != nil {
 		return nil, err
@@ -368,11 +391,15 @@ func (c *linuxContainer) newSetnsProcess(p *Process, cmd *exec.Cmd, parentPipe, 
 	}
 	// for setns process, we don't have to set cloneflags as the process namespaces
 	// will only be set via setns syscall
+	// 对于setns 进程，我们不需要传递cloneflags
+	logrus.Info("\t\t[newSetnsProcess] 组装 bootstrapData")
 	data, err := c.bootstrapData(0, state.NamespacePaths)
 	if err != nil {
 		return nil, err
 	}
+	logrus.Info("\t\t cmd = ", cmd)
 	// TODO: set on container for process management
+	logrus.Info("\t\t[newSetnsProcess] 实例化 setnsProcess结构体")
 	p.consoleChan = make(chan *os.File, 1)
 	return &setnsProcess{
 		cmd:           cmd,
@@ -1279,7 +1306,7 @@ func (c *linuxContainer) currentState() (*State, error) {
 // can setns in order.
 func (c *linuxContainer) orderNamespacePaths(namespaces map[configs.NamespaceType]string) ([]string, error) {
 	paths := []string{}
-	order := []configs.NamespaceType{
+	order := []configs.NamespaceType{ // 定义setns时namespace的顺序
 		// The user namespace *must* be done first.
 		configs.NEWUSER,
 		configs.NEWIPC,
@@ -1290,6 +1317,7 @@ func (c *linuxContainer) orderNamespacePaths(namespaces map[configs.NamespaceTyp
 	}
 
 	// Remove namespaces that we don't need to join.
+	// 只保留需要的namespace
 	var nsTypes []configs.NamespaceType
 	for _, ns := range order {
 		if c.config.Namespaces.Contains(ns) {
@@ -1314,6 +1342,7 @@ func (c *linuxContainer) orderNamespacePaths(namespaces map[configs.NamespaceTyp
 			paths = append(paths, fmt.Sprintf("%s:%s", configs.NsName(nsType), p))
 		}
 	}
+	// 返回字符串 eg: pid:/proc/PID/ns/pid,uts:/proc/PID/ns/uts
 	return paths, nil
 }
 
@@ -1334,10 +1363,13 @@ func encodeIDMapping(idMap []configs.IDMap) ([]byte, error) {
 // such as one that uses nsenter package to bootstrap the container's
 // init process correctly, i.e. with correct namespaces, uid/gid
 // mapping etc.
+// 该函数，使用netlink/nl构造了一个netlink的request数据格式
+// 后面在c代码中，会用netlink的API来解析该数据格式。
 func (c *linuxContainer) bootstrapData(cloneFlags uintptr, nsMaps map[configs.NamespaceType]string) (io.Reader, error) {
 	// create the netlink message
 	r := nl.NewNetlinkRequest(int(InitMsg), 0)
 
+	logrus.Infof("\t\t\t[bootstrapData] write cloneFlags = %v", cloneFlags)
 	// write cloneFlags
 	r.AddData(&Int32msg{
 		Type:  CloneFlagsAttr,
@@ -1346,6 +1378,7 @@ func (c *linuxContainer) bootstrapData(cloneFlags uintptr, nsMaps map[configs.Na
 
 	// write custom namespace paths
 	if len(nsMaps) > 0 {
+		logrus.Info("\t\t\t[bootstrapData] write custom namespace paths")
 		nsPaths, err := c.orderNamespacePaths(nsMaps)
 		if err != nil {
 			return nil, err
@@ -1365,6 +1398,7 @@ func (c *linuxContainer) bootstrapData(cloneFlags uintptr, nsMaps map[configs.Na
 			if err != nil {
 				return nil, err
 			}
+			logrus.Info("\t\t\t[bootstrapData] write uidmap ")
 			r.AddData(&Bytemsg{
 				Type:  UidmapAttr,
 				Value: b,
@@ -1377,6 +1411,7 @@ func (c *linuxContainer) bootstrapData(cloneFlags uintptr, nsMaps map[configs.Na
 			if err != nil {
 				return nil, err
 			}
+			logrus.Info("\t\t\t[bootstrapData] write gidmap ")
 			r.AddData(&Bytemsg{
 				Type:  GidmapAttr,
 				Value: b,
@@ -1387,6 +1422,7 @@ func (c *linuxContainer) bootstrapData(cloneFlags uintptr, nsMaps map[configs.Na
 				return nil, err
 			}
 			if !pid.Get(capability.EFFECTIVE, capability.CAP_SETGID) {
+				logrus.Info("\t\t\t[bootstrapData] write setgroup")
 				r.AddData(&Boolmsg{
 					Type:  SetgroupAttr,
 					Value: true,
@@ -1395,5 +1431,6 @@ func (c *linuxContainer) bootstrapData(cloneFlags uintptr, nsMaps map[configs.Na
 		}
 	}
 
+	// Serialize the Netlink request into a byte array
 	return bytes.NewReader(r.Serialize()), nil
 }
