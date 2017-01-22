@@ -128,7 +128,7 @@ func main() {
 		default:
 			return fmt.Errorf("unknown log-format %q", context.GlobalString("log-format"))
 		}
-		logrus.Info("app.Before")
+		logrus.Info("RUN app.Before function")
 		return nil
 	}
 	// If the command returns an error, cli takes upon itself to print

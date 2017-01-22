@@ -258,6 +258,7 @@ func (p *initProcess) execSetns() error {
 		return &exec.ExitError{ProcessState: status}
 	}
 	var pid *pid
+	fmt.Println("在这里阻塞住，等待最终启动的容器的进程ID json.Decode")
 	fmt.Println("[execSetns] wating for pid...")
 	if err := json.NewDecoder(p.parentPipe).Decode(&pid); err != nil {
 		p.cmd.Wait()

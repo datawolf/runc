@@ -126,7 +126,7 @@ static int syncfd = -1;
 
 #define debug(fmt, ...)								\
 	do {									\
-		fprintf(stdout, "nsenter[%d][%d]: " fmt ": %m\n",getpid(), getppid(), ##__VA_ARGS__);		\
+		fprintf(stderr, "nsenter[pid:%d][ppid:%d]: " fmt ": %m\n",getpid(), getppid(), ##__VA_ARGS__);		\
 	} while(0)
 
 static int write_file(char *data, size_t data_len, char *pathfmt, ...)

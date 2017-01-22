@@ -97,7 +97,7 @@ func CriuPath(criupath string) func(*LinuxFactory) error {
 // New returns a linux based container factory based in the root directory and
 // configures the factory with the provided option funcs.
 func New(root string, options ...func(*LinuxFactory) error) (Factory, error) {
-	fmt.Printf("[libcontainer.New] create root dir = \"%s\"\n", root)
+	fmt.Printf("[libcontainer.New] create root dir = %q\n", root)
 	if root != "" {
 		if err := os.MkdirAll(root, 0700); err != nil {
 			return nil, newGenericError(err, SystemError)
@@ -113,7 +113,7 @@ func New(root string, options ...func(*LinuxFactory) error) (Factory, error) {
 	fmt.Println("[libcontainer.New] set default cgroupManager to fs")
 	Cgroupfs(l)
 	for _, opt := range options {
-		fmt.Printf("[libcontainer.New] call option funcs = %v\n", opt)
+		fmt.Printf("[libcontainer.New] call option funcs = %#v\n", opt)
 		if err := opt(l); err != nil {
 			return nil, err
 		}
@@ -145,12 +145,12 @@ func (l *LinuxFactory) Create(id string, config *configs.Config) (Container, err
 	if l.Root == "" {
 		return nil, newGenericError(fmt.Errorf("invalid root"), ConfigInvalid)
 	}
-	fmt.Printf("[LinuxFactory.Create] l.Root = %v\n", l.Root)
-	fmt.Printf("[LinuxFactory.Create] validate the container-id = %v\n", id)
+	fmt.Printf("[LinuxFactory.Create] l.Root = %q\n", l.Root)
+	fmt.Printf("[LinuxFactory.Create] validate the container-id = %q\n", id)
 	if err := l.validateID(id); err != nil {
 		return nil, err
 	}
-	fmt.Printf("[LinuxFactory.Create] validate the container config = %v\n", config)
+	fmt.Printf("[LinuxFactory.Create] validate the container config = %#v\n", config)
 	if err := l.Validator.Validate(config); err != nil {
 		return nil, newGenericError(err, ConfigInvalid)
 	}
@@ -196,7 +196,7 @@ func (l *LinuxFactory) Create(id string, config *configs.Config) (Container, err
 		cgroupManager: l.NewCgroupsManager(config.Cgroups, nil),
 	}
 	c.state = &stoppedState{c: c}
-	fmt.Printf("[LinuxFactory.Create] create linuxContainer = %v\n", c)
+	fmt.Printf("[LinuxFactory.Create] create linuxContainer = %#v\n", c)
 	return c, nil
 }
 

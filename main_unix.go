@@ -13,11 +13,13 @@ import (
 )
 
 func init() {
-	logrus.Info("main_unix.go init")
+	logrus.Info("Enter main_unix.go init, 如果参数为init，则设置go的运行环境，否则，直接退出init")
 	if len(os.Args) > 1 && os.Args[1] == "init" {
-		logrus.Info("set gomaxprocs")
+		logrus.Info("设置 rumtime gomaxprocs and lockosthread")
 		runtime.GOMAXPROCS(1)
 		runtime.LockOSThread()
+	} else {
+		logrus.Info("os.Args[1] != init, 直接退出")
 	}
 }
 

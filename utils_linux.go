@@ -76,7 +76,7 @@ func getDefaultImagePath(context *cli.Context) string {
 // newProcess returns a new libcontainer Process with the arguments from the
 // spec and stdio from the current process.
 func newProcess(p specs.Process) (*libcontainer.Process, error) {
-	fmt.Println("[newProcess] return a new libcontainer Process")
+	logrus.Info("[newProcess] return a new libcontainer Process")
 	lp := &libcontainer.Process{
 		Args: p.Args,
 		Env:  p.Env,
